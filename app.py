@@ -282,6 +282,11 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+# Health check endpoint - no auth required for Cloudflare tunnel monitoring
+@app.route('/v1/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "timestamp": int(time.time())})
+
 @app.route('/v1/chat/completions', methods=['POST'])
 @require_api_key
 def chat_completions():
@@ -341,10 +346,6 @@ def chat_completions():
             )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-@app.route('/v1/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy", "timestamp": int(time.time())})
 
 if __name__ == '__main__':
     # Get port from environment variable or default to 8000
