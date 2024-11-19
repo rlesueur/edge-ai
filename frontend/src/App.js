@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
 import { useDropzone } from 'react-dropzone';
 import ReactMarkdown from 'react-markdown';
-import { PaperAirplaneIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { PaperAirplaneIcon } from '@heroicons/react/24/outline';
 
 const API_URL = 'https://api.rexia.uk/v1/chat/completions';
 const API_KEY = 'QaMMC2AuXaHgoBZxej7TcB4o8_QozPnNbb7cHO-B3g8';
@@ -11,6 +10,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState('');
   const messagesEndRef = useRef(null);
   const [files, setFiles] = useState([]);
 
@@ -20,7 +20,7 @@ function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, streamingMessage]);
 
   const { getRootProps, getInputProps } = useDropzone({
     accept: {
@@ -56,6 +56,7 @@ function App() {
     setMessages(prev => [...prev, newMessage]);
     setInput('');
     setIsLoading(true);
+    setStreamingMessage('');
 
     try {
       let content = input;
@@ -72,18 +73,58 @@ function App() {
         }
       }
 
-      const response = await axios.post(API_URL, {
-        model: 'llama3.2-vision:latest',
-        messages: [...messages, { role: 'user', content }]
-      }, {
+      const response = await fetch(API_URL, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${API_KEY}`
-        }
+        },
+        body: JSON.stringify({
+          model: 'llama3.2-vision:latest',
+          messages: [...messages, { role: 'user', content }],
+          stream: true
+        })
       });
 
-      const assistantMessage = response.data.choices[0].message;
-      setMessages(prev => [...prev, assistantMessage]);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.choices?.[0]?.delta?.content) {
+                setStreamingMessage(prev => prev + parsed.choices[0].delta.content);
+              }
+            } catch (e) {
+              console.error('Error parsing SSE message:', e);
+            }
+          }
+        }
+      }
+
+      // Add the complete streamed message to the messages array
+      if (streamingMessage) {
+        setMessages(prev => [...prev, { role: 'assistant', content: streamingMessage }]);
+        setStreamingMessage('');
+      }
+
     } catch (error) {
       console.error('Error:', error);
       setMessages(prev => [...prev, {
@@ -127,7 +168,16 @@ function App() {
                 </div>
               </div>
             ))}
-            {isLoading && (
+            {streamingMessage && (
+              <div className="flex justify-start">
+                <div className="max-w-lg rounded-lg px-4 py-2 bg-white text-gray-900 shadow">
+                  <ReactMarkdown className="prose">
+                    {streamingMessage}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+            {isLoading && !streamingMessage && (
               <div className="flex justify-start">
                 <div className="max-w-lg rounded-lg px-4 py-2 bg-white text-gray-900 shadow">
                   <div className="flex space-x-2">
