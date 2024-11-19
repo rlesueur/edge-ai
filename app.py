@@ -55,7 +55,7 @@ def create_chat_completion(messages, model=MODEL_NAME, temperature=0.7, stream=F
         "stop": stop if stop else [],
         "repeat_penalty": 1.0 + (frequency_penalty / 2.0),  # Map -2 to 2 range to repeat penalty
         "presence_penalty": presence_penalty,  # Ollama supports this directly
-        "num_ctx": 96000,  # Maximum context size that reliably uses GPU
+        "num_ctx": 8000,  # Maximum context size that reliably uses GPU
     }
 
     start_time = time.time()
