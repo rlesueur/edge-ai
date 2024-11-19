@@ -1,0 +1,15 @@
+tunnel: 97659a8d-a39e-4a6f-acb6-fcd8ba8d6ea2
+token: eyJhIjoiZTU1ODU5OTc4MDAyZjZmZGU3MTk4Mzk4YWNiMTQwNTQiLCJ0IjoiOTc2NTlhOGQtYTM5ZS00YTZmLWFjYjYtZmNkOGJhOGQ2ZWEyIiwicyI6IllUTTBNR1pqTkRndE1EaGpPUzAwWmpNekxXRXhPVEV0T1dFeFpqWXlOV1JpTjJZMCJ9
+
+ingress:
+  - hostname: api.rexia.uk
+    service: http://localhost:8000
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 60s
+      tcpKeepAlive: 300s
+      timeout: 600s  # 10 minutes
+  - service: http_status:404
+
+# Enable debug logging
+logLevel: debug
