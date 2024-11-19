@@ -78,6 +78,24 @@ def create_chat_completion(messages, model=MODEL_NAME, temperature=0.7, stream=F
     if stream:
         def generate():
             nonlocal token_count
+            chat_id = f"chatcmpl-{int(time.time())}"
+            created = int(time.time())
+            
+            # Send the first chunk with the role
+            first_chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant"
+                    }
+                }]
+            }
+            yield f"data: {json.dumps(first_chunk)}\n\n"
+            
             for line in response.iter_lines():
                 if line:
                     try:
@@ -85,17 +103,55 @@ def create_chat_completion(messages, model=MODEL_NAME, temperature=0.7, stream=F
                         content = chunk["message"].get("content", "")
                         token_count += len(content.split())  # Rough token count
                         
-                        # Simplified streaming response
-                        yield f"data: {json.dumps({'choices': [{'delta': {'content': content}}]})}\n\n"
+                        # Format chunk to match OpenAI's API
+                        response_chunk = {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                    "content": content
+                                }
+                            }]
+                        }
+                        yield f"data: {json.dumps(response_chunk)}\n\n"
                         
                     except Exception as e:
                         print(f"Error processing chunk: {str(e)}")
                         continue
             
-            # Send timing stats at the end
+            # Send timing stats
             elapsed_time = time.time() - start_time
             tokens_per_second = token_count / elapsed_time if elapsed_time > 0 else 0
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': f'\n\n[Stats: {token_count} tokens in {elapsed_time:.2f}s = {tokens_per_second:.2f} tokens/s]'}}]})}\n\n"
+            stats_chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "content": f"\n\n[Stats: {token_count} tokens in {elapsed_time:.2f}s = {tokens_per_second:.2f} tokens/s]"
+                    }
+                }]
+            }
+            yield f"data: {json.dumps(stats_chunk)}\n\n"
+            
+            # Send final chunk with finish_reason
+            final_chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop"
+                }]
+            }
+            yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
         
         return Response(generate(), mimetype='text/event-stream')
