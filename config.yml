@@ -9,6 +9,12 @@ ingress:
       connectTimeout: 60s
       tcpKeepAlive: 300s
       timeout: 600s  # 10 minutes
+    healthCheck:
+      enabled: true
+      path: /v1/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
   - service: http_status:404
 
 # Enable debug logging

@@ -342,6 +342,10 @@ def chat_completions():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/v1/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "timestamp": int(time.time())})
+
 if __name__ == '__main__':
     # Get port from environment variable or default to 8000
     port = int(os.environ.get('PORT', 8000))
