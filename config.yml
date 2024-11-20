@@ -6,7 +6,7 @@ ingress:
     service: http://localhost:8000
     originRequest:
       noTLSVerify: true
-      connectTimeout: 60s
+      connectTimeout: 300s  # 5 minutes
       tcpKeepAlive: 300s
       timeout: 600s  # 10 minutes
     healthCheck:

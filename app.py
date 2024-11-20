@@ -56,6 +56,7 @@ def create_chat_completion(messages, model=MODEL_NAME, temperature=0.7, stream=F
         "repeat_penalty": 1.0 + (frequency_penalty / 2.0),  # Map -2 to 2 range to repeat penalty
         "presence_penalty": presence_penalty,  # Ollama supports this directly
         "num_ctx": 8000,  # Maximum context size that reliably uses GPU
+        "timeout": 300  # 5 minutes timeout
     }
 
     start_time = time.time()
@@ -69,7 +70,8 @@ def create_chat_completion(messages, model=MODEL_NAME, temperature=0.7, stream=F
             "stream": stream,
             "options": options
         },
-        stream=stream
+        stream=stream,
+        timeout=300  # 5 minutes timeout for requests library
     )
     
     if response.status_code != 200:
@@ -195,17 +197,27 @@ def process_vision_request(messages, model=MODEL_NAME, temperature=0.7):
                     if isinstance(item, str):
                         text_parts.append(item)
                     elif isinstance(item, dict) and item.get("type") == "image_url":
-                        image_url = item["image_url"]
+                        image_url = item["image_url"].get("url", "")
+                        print(f"Processing image URL: {image_url[:50]}...")  # Show first 50 chars
                         if image_url.startswith("data:image"):
                             # Handle base64 encoded images
-                            format, imgstr = image_url.split(';base64,')
-                            image_data = base64.b64decode(imgstr)
-                            img = Image.open(BytesIO(image_data))
-                            # Convert to base64 again for Ollama
-                            buffered = BytesIO()
-                            img.save(buffered, format="JPEG")
-                            img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                            images.append(f"data:image/jpeg;base64,{img_base64}")
+                            try:
+                                # Extract just the base64 part after the comma
+                                base64_data = image_url.split(',')[1]
+                                print(f"Base64 data (first 50 chars): {base64_data[:50]}...")
+                                image_data = base64.b64decode(base64_data)
+                                img = Image.open(BytesIO(image_data))
+                                print(f"Image opened successfully: {img.format} {img.size}")
+                                # Convert to base64 again for Ollama
+                                buffered = BytesIO()
+                                img.save(buffered, format="JPEG")
+                                img_base64 = base64.b64encode(buffered.getvalue()).decode()
+                                print(f"Converted base64 (first 50 chars): {img_base64[:50]}...")
+                                images.append(img_base64)
+                            except Exception as e:
+                                print(f"Error processing image: {str(e)}")
+                                print(f"Image URL structure: {item['image_url']}")
+                                raise Exception(f"Error processing image: {str(e)}")
                         else:
                             # Handle regular URLs
                             response = requests.get(image_url)
@@ -213,7 +225,7 @@ def process_vision_request(messages, model=MODEL_NAME, temperature=0.7):
                             buffered = BytesIO()
                             img.save(buffered, format="JPEG")
                             img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                            images.append(f"data:image/jpeg;base64,{img_base64}")
+                            images.append(img_base64)
                 
                 processed_messages.append({
                     "role": "user",
@@ -234,9 +246,11 @@ def process_vision_request(messages, model=MODEL_NAME, temperature=0.7):
             "options": {
                 "temperature": temperature,
                 "num_ctx": 128000,  # 128k context window
-                "num_gpu": 99  # Use all available GPUs
+                "num_gpu": 99,  # Use all available GPUs
+                "timeout": 300  # 5 minutes timeout
             }
-        }
+        },
+        timeout=300  # 5 minutes timeout for requests library
     )
     
     if response.status_code != 200:
