@@ -1,9 +1,6 @@
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import requests
-import base64
-from io import BytesIO
-from PIL import Image
 import json
 import time
 import os
@@ -183,101 +180,6 @@ def create_chat_completion(messages, model=MODEL_NAME, temperature=0.7, stream=F
         }
     }
 
-def process_vision_request(messages, model=MODEL_NAME, temperature=0.7):
-    processed_messages = []
-    
-    for message in messages:
-        if message.get("role") == "user" and "content" in message:
-            content = message["content"]
-            if isinstance(content, list):
-                text_parts = []
-                images = []
-                
-                for item in content:
-                    if isinstance(item, str):
-                        text_parts.append(item)
-                    elif isinstance(item, dict) and item.get("type") == "image_url":
-                        image_url = item["image_url"].get("url", "")
-                        print(f"Processing image URL: {image_url[:50]}...")  # Show first 50 chars
-                        if image_url.startswith("data:image"):
-                            # Handle base64 encoded images
-                            try:
-                                # Extract just the base64 part after the comma
-                                base64_data = image_url.split(',')[1]
-                                print(f"Base64 data (first 50 chars): {base64_data[:50]}...")
-                                image_data = base64.b64decode(base64_data)
-                                img = Image.open(BytesIO(image_data))
-                                print(f"Image opened successfully: {img.format} {img.size}")
-                                # Convert to base64 again for Ollama
-                                buffered = BytesIO()
-                                img.save(buffered, format="JPEG")
-                                img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                                print(f"Converted base64 (first 50 chars): {img_base64[:50]}...")
-                                images.append(img_base64)
-                            except Exception as e:
-                                print(f"Error processing image: {str(e)}")
-                                print(f"Image URL structure: {item['image_url']}")
-                                raise Exception(f"Error processing image: {str(e)}")
-                        else:
-                            # Handle regular URLs
-                            response = requests.get(image_url)
-                            img = Image.open(BytesIO(response.content))
-                            buffered = BytesIO()
-                            img.save(buffered, format="JPEG")
-                            img_base64 = base64.b64encode(buffered.getvalue()).decode()
-                            images.append(img_base64)
-                
-                processed_messages.append({
-                    "role": "user",
-                    "content": " ".join(text_parts),
-                    "images": images
-                })
-            else:
-                processed_messages.append(message)
-        else:
-            processed_messages.append(message)
-    
-    response = requests.post(
-        f"{OLLAMA_BASE_URL}/api/chat",
-        json={
-            "model": model,
-            "messages": processed_messages,
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_ctx": 128000,  # 128k context window
-                "num_gpu": 99,  # Use all available GPUs
-                "timeout": 300  # 5 minutes timeout
-            }
-        },
-        timeout=300  # 5 minutes timeout for requests library
-    )
-    
-    if response.status_code != 200:
-        raise Exception(f"Error from Ollama API: {response.text}")
-    
-    result = response.json()
-    
-    return {
-        "id": f"chatcmpl-{int(time.time())}",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": result["message"]["content"]
-            },
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": -1,
-            "completion_tokens": -1,
-            "total_tokens": -1
-        }
-    }
-
 def cleanup():
     # Get the process ID
     pid = os.getpid()
@@ -306,8 +208,8 @@ def health_check():
 def chat_completions():
     data = request.json
     messages = data.get('messages', [])
-    temperature = data.get('temperature', 0.7)
     model = data.get('model', MODEL_NAME)
+    temperature = data.get('temperature', 0.7)
     stream = data.get('stream', False)
     top_p = data.get('top_p', 1.0)
     n = data.get('n', 1)
@@ -316,48 +218,19 @@ def chat_completions():
     frequency_penalty = data.get('frequency_penalty', 0.0)
     stop = data.get('stop', None)
     
-    # Validate parameters
-    if n > 1:
-        return jsonify({"error": "Multiple completions (n>1) are not supported"}), 400
-    
-    if not isinstance(temperature, (int, float)) or temperature < 0 or temperature > 2:
-        return jsonify({"error": "temperature must be between 0 and 2"}), 400
-        
-    if not isinstance(top_p, (int, float)) or top_p < 0 or top_p > 1:
-        return jsonify({"error": "top_p must be between 0 and 1"}), 400
-        
-    if not isinstance(presence_penalty, (int, float)) or presence_penalty < -2.0 or presence_penalty > 2.0:
-        return jsonify({"error": "presence_penalty must be between -2.0 and 2.0"}), 400
-        
-    if not isinstance(frequency_penalty, (int, float)) or frequency_penalty < -2.0 or frequency_penalty > 2.0:
-        return jsonify({"error": "frequency_penalty must be between -2.0 and 2.0"}), 400
-    
-    # Check if this is a vision request
-    has_images = any(
-        isinstance(msg.get('content'), list) and 
-        any(isinstance(item, dict) and item.get('type') == 'image_url' 
-            for item in msg['content'])
-        for msg in messages
-    )
-    
     try:
-        if has_images:
-            if stream:
-                return jsonify({"error": "Streaming is not supported for vision requests"}), 400
-            return jsonify(process_vision_request(messages, model, temperature))
-        else:
-            return create_chat_completion(
-                messages=messages,
-                model=model,
-                temperature=temperature,
-                stream=stream,
-                top_p=top_p,
-                n=n,
-                max_tokens=max_tokens,
-                presence_penalty=presence_penalty,
-                frequency_penalty=frequency_penalty,
-                stop=stop
-            )
+        return create_chat_completion(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            stream=stream,
+            top_p=top_p,
+            n=n,
+            max_tokens=max_tokens,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            stop=stop
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
